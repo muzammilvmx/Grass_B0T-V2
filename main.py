@@ -147,4 +147,4 @@ if __name__ == '__main__':
         user_id, proxy_file = get_user_input()
         
         command = f'python3 {__file__} --user-id {user_id} --proxy-file {proxy_file}'
-        subprocess.run(['tmux', 'send-keys', '-t', 'GrassV2', command, 'C-m'])
+        subprocess.run(['tmux', 'send-keys', '-t', 'GrassV2', command + ' C-m'])
