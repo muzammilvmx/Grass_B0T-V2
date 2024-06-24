@@ -64,58 +64,65 @@ async def connect_to_wss(socks5_proxy, user_id):
 
     async def send_ping(websocket):
         while True:
-            send_message = json.dumps({
-                "id": str(uuid.uuid4()),
-                "version": "1.0.0",
-                "action": "PING",
-                "data": {}
-            })
-            logger.debug(f"Sending PING message: {send_message}")
-            await websocket.send(send_message)
-            await asyncio.sleep(PING_INTERVAL)
+            try:
+                send_message = json.dumps({
+                    "id": str(uuid.uuid4()),
+                    "version": "1.0.0",
+                    "action": "PING",
+                    "data": {}
+                })
+                logger.debug(f"Sending PING message: {send_message}")
+                await websocket.send(send_message)
+                await asyncio.sleep(PING_INTERVAL)
+            except websockets.exceptions.ConnectionClosed:
+                logger.warning("WebSocket connection closed during ping, attempting to reconnect.")
+                break
 
     for uri in WEBSOCKET_URLS:
-        try:
-            proxy = Proxy.from_url(socks5_proxy)
-            async with proxy_connect(uri, proxy=proxy, ssl=ssl_context, extra_headers={
-                "Origin": "chrome-extension://lkbnfiajjmbhnfledhphioinpickokdi",
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"
-            }) as websocket:
-                logger.info(f"Connected to WebSocket URI: {uri}")
+        while True:
+            try:
+                proxy = Proxy.from_url(socks5_proxy)
+                async with proxy_connect(uri, proxy=proxy, ssl=ssl_context, extra_headers={
+                    "Origin": "chrome-extension://lkbnfiajjmbhnfledhphioinpickokdi",
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"
+                }) as websocket:
+                    logger.info(f"Connected to WebSocket URI: {uri}")
 
-                asyncio.create_task(send_ping(websocket))
+                    ping_task = asyncio.create_task(send_ping(websocket))
 
-                async for message in websocket:
-                    message = json.loads(message)
-                    logger.info(f"Received message: {message}")
+                    async for message in websocket:
+                        message = json.loads(message)
+                        logger.info(f"Received message: {message}")
 
-                    if message.get("action") == "AUTH":
-                        auth_response = json.dumps({
-                            "id": message["id"],
-                            "origin_action": "AUTH",
-                            "result": {
-                                "browser_id": str(uuid.uuid4()),
-                                "user_id": user_id,
-                                "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
-                                "timestamp": int(time.time()),
-                                "device_type": "extension",
-                                "version": "4.20.2",
-                                "extension_id": "lkbnfiajjmbhnfledhphioinpickokdi"
-                            }
-                        })
-                        logger.debug(f"Sending AUTH response: {auth_response}")
-                        await websocket.send(auth_response)
+                        if message.get("action") == "AUTH":
+                            auth_response = json.dumps({
+                                "id": message["id"],
+                                "origin_action": "AUTH",
+                                "result": {
+                                    "browser_id": str(uuid.uuid4()),
+                                    "user_id": user_id,
+                                    "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+                                    "timestamp": int(time.time()),
+                                    "device_type": "extension",
+                                    "version": "4.20.2",
+                                    "extension_id": "lkbnfiajjmbhnfledhphioinpickokdi"
+                                }
+                            })
+                            logger.debug(f"Sending AUTH response: {auth_response}")
+                            await websocket.send(auth_response)
 
-                    elif message.get("action") == "PONG":
-                        pong_response = json.dumps({
-                            "id": message["id"],
-                            "origin_action": "PONG"
-                        })
-                        logger.debug(f"Sending PONG response: {pong_response}")
-                        await websocket.send(pong_response)
-        except Exception as e:
-            logger.error(f"Error connecting to WebSocket URI: {uri} - {e}")
-            logger.error(f"Using proxy: {socks5_proxy}")
+                        elif message.get("action") == "PONG":
+                            pong_response = json.dumps({
+                                "id": message["id"],
+                                "origin_action": "PONG"
+                            })
+                            logger.debug(f"Sending PONG response: {pong_response}")
+                            await websocket.send(pong_response)
+            except websockets.exceptions.ConnectionClosedOK:
+                logger.info("WebSocket connection closed normally, attempting to reconnect.")
+            except Exception as e:
+                logger.error(f"Error connecting to WebSocket URI: {uri} - {e}")
+                logger.error(f"Using proxy: {socks5_proxy}")
             await asyncio.sleep(5)  # wait before retrying
 
 async def main(user_id, socks5_proxy_list):
@@ -130,8 +137,15 @@ if __name__ == '__main__':
     socks5_proxy_list = load_proxies(proxy_file)
 
     # Start the script in the tmux session
-    command = f'python3 -c "{__file__}"'
+    command = f'python3 {__file__} --user-id {user_id} --proxy-file {proxy_file}'
     subprocess.run(['tmux', 'send-keys', '-t', 'GrassV2', command, 'C-m'])
 
+    # Parse arguments to get user_id and proxy_file
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--user-id', type=str, required=True)
+    parser.add_argument('--proxy-file', type=str, required=True)
+    args = parser.parse_args()
+
     # Run the main function
-    asyncio.run(main(user_id, socks5_proxy_list))
+    asyncio.run(main(args.user_id, load_proxies(args.proxy_file)))
