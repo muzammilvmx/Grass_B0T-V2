@@ -67,14 +67,12 @@ async def connect_to_wss(socks5_proxy, user_id):
     async def send_ping(websocket):
         while True:
             try:
-                send_message = json.dumps({
+                await websocket.send(json.dumps({
                     "id": str(uuid.uuid4()),
                     "version": "1.0.0",
                     "action": "PING",
                     "data": {}
-                })
-                logger.debug(f"Sending PING message: {send_message}")
-                await websocket.send(send_message)
+                }))
                 await asyncio.sleep(PING_INTERVAL)
             except websockets.exceptions.ConnectionClosed:
                 logger.warning("WebSocket connection closed during ping, attempting to reconnect.")
@@ -135,14 +133,12 @@ async def main(user_id, socks5_proxy_list):
     await asyncio.gather(*tasks)
 
 if __name__ == '__main__':
-    # If running in tmux, parse arguments
     if 'TMUX' in os.environ:
         parser = argparse.ArgumentParser()
         parser.add_argument('--user-id', type=str, required=True)
         parser.add_argument('--proxy-file', type=str, required=True)
         args = parser.parse_args()
 
-        # Run the main function
         asyncio.run(main(args.user_id, load_proxies(args.proxy_file)))
     else:
         print_intro()
@@ -150,6 +146,5 @@ if __name__ == '__main__':
         manage_tmux_session('GrassV2')
         user_id, proxy_file = get_user_input()
         
-        # Start the script in the tmux session
         command = f'python3 {__file__} --user-id {user_id} --proxy-file {proxy_file}'
         subprocess.run(['tmux', 'send-keys', '-t', 'GrassV2', command, 'C-m'])
