@@ -7,6 +7,7 @@ import time
 import uuid
 from loguru import logger
 from websockets_proxy import Proxy, proxy_connect
+import websockets
 import argparse
 
 WEBSOCKET_URLS = [
@@ -77,6 +78,9 @@ async def connect_to_wss(socks5_proxy, user_id):
                 await asyncio.sleep(PING_INTERVAL)
             except websockets.exceptions.ConnectionClosed:
                 logger.warning("WebSocket connection closed during ping, attempting to reconnect.")
+                break
+            except asyncio.CancelledError:
+                logger.warning("Ping task was cancelled.")
                 break
 
     for uri in WEBSOCKET_URLS:
